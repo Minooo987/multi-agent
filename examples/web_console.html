@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent Teams 控制台</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            color: #2c3e50;
+        }
+
+        .panel {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .panel h2 {
+            margin-bottom: 15px;
+            color: #34495e;
+            font-size: 18px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+
+        input[type="text"],
+        textarea,
+        select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        textarea {
+            min-height: 80px;
+            resize: vertical;
+        }
+
+        button {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-right: 10px;
+        }
+
+        button:hover {
+            background: #2980b9;
+        }
+
+        button:disabled {
+            background: #95a5a6;
+            cursor: not-allowed;
+        }
+
+        button.secondary {
+            background: #95a5a6;
+        }
+
+        button.secondary:hover {
+            background: #7f8c8d;
+        }
+
+        .status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .status.connected {
+            background: #2ecc71;
+            color: white;
+        }
+
+        .status.disconnected {
+            background: #e74c3c;
+            color: white;
+        }
+
+        .status.processing {
+            background: #f39c12;
+            color: white;
+        }
+
+        .logs {
+            background: #2c3e50;
+            color: #ecf0f1;
+            font-family: 'Consolas', monospace;
+            font-size: 13px;
+            padding: 15px;
+            border-radius: 4px;
+            height: 300px;
+            overflow-y: auto;
+        }
+
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 3px 0;
+            border-bottom: 1px solid #34495e;
+        }
+
+        .log-entry .timestamp {
+            color: #95a5a6;
+            margin-right: 10px;
+        }
+
+        .log-entry .level-info {
+            color: #3498db;
+        }
+
+        .log-entry .level-success {
+            color: #2ecc71;
+        }
+
+        .log-entry .level-error {
+            color: #e74c3c;
+        }
+
+        .result-panel {
+            background: #ecf0f1;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 15px;
+            white-space: pre-wrap;
+            font-family: 'Consolas', monospace;
+            font-size: 13px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .quick-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .quick-actions button {
+            font-size: 12px;
+            padding: 8px 15px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 Agent Teams 控制台</h1>
+
+        <div class="panel">
+            <h2>连接状态 <span id="connectionStatus" class="status disconnected">未连接</span></h2>
+            <div class="form-group">
+                <label>服务器地址</label>
+                <input type="text" id="serverUrl" value="ws://localhost:8000/ws/web-client" />
+            </div>
+            <button id="connectBtn" onclick="connect()">连接</button>
+            <button id="disconnectBtn" class="secondary" onclick="disconnect()" disabled>断开</button>
+        </div>
+
+        <div class="grid">
+            <div class="panel">
+                <h2>发送分析请求</h2>
+                <div class="form-group">
+                    <label>查询内容</label>
+                    <textarea id="queryInput" placeholder="输入你的分析需求..."></textarea>
+                </div>
+                <div class="quick-actions">
+                    <button onclick="setQuery('分析昨天各线路的客流情况')">昨天客流</button>
+                    <button onclick="setQuery('统计本周收入最高的5条线路')">收入排行</button>
+                    <button onclick="setQuery('计算101线路的班次间隔')">班次间隔</button>
+                    <button onclick="setQuery('分析高峰时段客流分布')">高峰分析</button>
+                </div>
+                <br><br>
+                <button onclick="sendAnalyze()" id="analyzeBtn" disabled>发送请求</button>
+            </div>
+
+            <div class="panel">
+                <h2>人工反馈</h2>
+                <div class="form-group">
+                    <label>任务ID</label>
+                    <input type="text" id="threadIdInput" placeholder="输入任务ID..." />
+                </div>
+                <div class="form-group">
+                    <label>反馈内容</label>
+                    <textarea id="feedbackInput" placeholder="输入反馈 (approve 批准 或 修改建议...)"></textarea>
+                </div>
+                <button onclick="sendFeedback()" id="feedbackBtn" disabled>提交反馈</button>
+            </div>
+        </div>
+
+        <div class="panel">
+            <h2>实时日志</h2>
+            <div class="logs" id="logs"></div>
+            <br>
+            <button class="secondary" onclick="clearLogs()">清空日志</button>
+        </div>
+
+        <div class="panel" id="resultPanel" style="display: none;">
+            <h2>分析结果</h2>
+            <div class="result-panel" id="resultContent"></div>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        let currentThreadId = null;
+
+        function log(message, level = 'info') {
+            const logs = document.getElementById('logs');
+            const timestamp = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.innerHTML = `<span class="timestamp">${timestamp}</span><span class="level-${level}">${message}</span>`;
+            logs.appendChild(entry);
+            logs.scrollTop = logs.scrollHeight;
+        }
+
+        function clearLogs() {
+            document.getElementById('logs').innerHTML = '';
+        }
+
+        function setQuery(query) {
+            document.getElementById('queryInput').value = query;
+        }
+
+        function updateConnectionStatus(connected) {
+            const status = document.getElementById('connectionStatus');
+            if (connected) {
+                status.textContent = '已连接';
+                status.className = 'status connected';
+                document.getElementById('connectBtn').disabled = true;
+                document.getElementById('disconnectBtn').disabled = false;
+                document.getElementById('analyzeBtn').disabled = false;
+                document.getElementById('feedbackBtn').disabled = false;
+            } else {
+                status.textContent = '未连接';
+                status.className = 'status disconnected';
+                document.getElementById('connectBtn').disabled = false;
+                document.getElementById('disconnectBtn').disabled = true;
+                document.getElementById('analyzeBtn').disabled = true;
+                document.getElementById('feedbackBtn').disabled = true;
+            }
+        }
+
+        function connect() {
+            const url = document.getElementById('serverUrl').value;
+            log(`正在连接到 ${url}...`);
+
+            ws = new WebSocket(url);
+
+            ws.onopen = () => {
+                log('WebSocket 连接已建立', 'success');
+                updateConnectionStatus(true);
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                handleMessage(data);
+            };
+
+            ws.onerror = (error) => {
+                log('WebSocket 错误: ' + error, 'error');
+            };
+
+            ws.onclose = () => {
+                log('WebSocket 连接已关闭');
+                updateConnectionStatus(false);
+            };
+        }
+
+        function disconnect() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+        }
+
+        function handleMessage(data) {
+            const type = data.type;
+
+            switch (type) {
+                case 'started':
+                    currentThreadId = data.thread_id;
+                    document.getElementById('threadIdInput').value = currentThreadId;
+                    log(`🚀 任务已启动: ${data.thread_id}`, 'success');
+                    break;
+
+                case 'completed':
+                    log(`✅ 任务完成: ${data.thread_id}`, 'success');
+                    if (data.result) {
+                        showResult(data.result);
+                    }
+                    if (data.requires_human_review) {
+                        log('⚠️ 任务需要人工审核', 'info');
+                    }
+                    break;
+
+                case 'error':
+                    log(`❌ 错误: ${data.error}`, 'error');
+                    break;
+
+                case 'status':
+                    log(`📋 状态更新: ${JSON.stringify(data.state)}`);
+                    break;
+
+                default:
+                    log(`📨 收到消息: ${JSON.stringify(data)}`);
+            }
+        }
+
+        function sendAnalyze() {
+            const query = document.getElementById('queryInput').value;
+            if (!query) {
+                alert('请输入查询内容');
+                return;
+            }
+
+            const message = {
+                type: 'analyze',
+                query: query
+            };
+
+            if (currentThreadId) {
+                message.thread_id = currentThreadId;
+            }
+
+            ws.send(JSON.stringify(message));
+            log(`📤 发送分析请求: ${query}`);
+        }
+
+        function sendFeedback() {
+            const threadId = document.getElementById('threadIdInput').value;
+            const feedback = document.getElementById('feedbackInput').value;
+
+            if (!threadId || !feedback) {
+                alert('请输入任务ID和反馈内容');
+                return;
+            }
+
+            const message = {
+                type: 'feedback',
+                thread_id: threadId,
+                feedback: feedback
+            };
+
+            ws.send(JSON.stringify(message));
+            log(`📤 提交反馈: ${feedback}`);
+        }
+
+        function showResult(result) {
+            const panel = document.getElementById('resultPanel');
+            const content = document.getElementById('resultContent');
+            content.textContent = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
+            panel.style.display = 'block';
+        }
+
+        // 页面加载时自动连接
+        window.onload = () => {
+            log('Agent Teams 控制台已加载');
+        };
+    </script>
+</body>
+</html>
