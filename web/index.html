@@ -1,0 +1,1188 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent Teams 多轮对话分析</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f7fa;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* 顶部标题栏 */
+        .header {
+            background: #1a1a2e;
+            color: white;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            font-size: 20px;
+            font-weight: 500;
+        }
+
+        .header .status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 14px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #ccc;
+        }
+
+        .status-dot.connected {
+            background: #4caf50;
+        }
+
+        .status-dot.connecting {
+            background: #ff9800;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* 主内容区 */
+        .main {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* 左侧对话历史 */
+        .sidebar {
+            width: 280px;
+            background: white;
+            border-right: 1px solid #e0e0e0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar-header {
+            padding: 15px;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .sidebar-header h3 {
+            font-size: 14px;
+            color: #666;
+        }
+
+        .new-chat-btn {
+            padding: 6px 12px;
+            background: #4a90e2;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .new-chat-btn:hover {
+            background: #357abd;
+        }
+
+        .conversation-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+        }
+
+        .conversation-item {
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .conversation-item:hover {
+            background: #f5f5f5;
+        }
+
+        .conversation-item.active {
+            background: #e3f2fd;
+        }
+
+        .conversation-item .title {
+            font-size: 14px;
+            color: #333;
+            margin-bottom: 4px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .conversation-item .meta {
+            font-size: 12px;
+            color: #999;
+        }
+
+        /* 中间聊天区 */
+        .chat-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: #f5f7fa;
+        }
+
+        .messages-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        .message {
+            display: flex;
+            margin-bottom: 20px;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message.user {
+            justify-content: flex-end;
+        }
+
+        .message.agent {
+            justify-content: flex-start;
+        }
+
+        .message-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            margin: 0 12px;
+        }
+
+        .message.user .message-avatar {
+            background: #4a90e2;
+            color: white;
+        }
+
+        .message.agent .message-avatar {
+            background: #f0f0f0;
+            color: #333;
+        }
+
+        .message-content {
+            max-width: 70%;
+            padding: 12px 16px;
+            border-radius: 12px;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .message.user .message-content {
+            background: #4a90e2;
+            color: white;
+            border-bottom-right-radius: 4px;
+        }
+
+        .message.agent .message-content {
+            background: white;
+            color: #333;
+            border-bottom-left-radius: 4px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+
+        .message-content .time {
+            font-size: 11px;
+            color: #999;
+            margin-top: 4px;
+        }
+
+        .message.user .message-content .time {
+            color: rgba(255,255,255,0.7);
+        }
+
+        /* 分析结果卡片 */
+        .analysis-card {
+            background: white;
+            border-radius: 8px;
+            padding: 16px;
+            margin-top: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .analysis-card h4 {
+            font-size: 14px;
+            color: #333;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #4a90e2;
+        }
+
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .metric-item {
+            background: #f8f9fa;
+            padding: 12px;
+            border-radius: 6px;
+        }
+
+        .metric-item .label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 4px;
+        }
+
+        .metric-item .value {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1a1a2e;
+        }
+
+        .finding-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .finding-list li {
+            padding: 8px 0;
+            border-left: 3px solid #4a90e2;
+            padding-left: 12px;
+            margin-bottom: 8px;
+            font-size: 13px;
+            color: #555;
+        }
+
+        /* 输入区 */
+        .input-area {
+            background: white;
+            border-top: 1px solid #e0e0e0;
+            padding: 15px 20px;
+        }
+
+        .input-wrapper {
+            display: flex;
+            gap: 12px;
+            align-items: flex-end;
+        }
+
+        .input-field {
+            flex: 1;
+            padding: 12px 16px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            resize: none;
+            min-height: 44px;
+            max-height: 120px;
+        }
+
+        .input-field:focus {
+            outline: none;
+            border-color: #4a90e2;
+        }
+
+        .send-btn {
+            padding: 12px 24px;
+            background: #4a90e2;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .send-btn:hover:not(:disabled) {
+            background: #357abd;
+        }
+
+        .send-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        /* 加载动画 */
+        .loading {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 16px;
+            color: #666;
+            font-size: 14px;
+        }
+
+        .loading-dots {
+            display: flex;
+            gap: 4px;
+        }
+
+        .loading-dots span {
+            width: 8px;
+            height: 8px;
+            background: #4a90e2;
+            border-radius: 50%;
+            animation: bounce 1.4s infinite ease-in-out;
+        }
+
+        .loading-dots span:nth-child(1) { animation-delay: 0s; }
+        .loading-dots span:nth-child(2) { animation-delay: 0.2s; }
+        .loading-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes bounce {
+            0%, 80%, 100% { transform: translateY(0); }
+            40% { transform: translateY(-10px); }
+        }
+
+        /* 右侧数据面板 */
+        .data-panel {
+            width: 320px;
+            background: white;
+            border-left: 1px solid #e0e0e0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .data-panel-header {
+            padding: 15px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .data-panel-header h3 {
+            font-size: 14px;
+            color: #666;
+        }
+
+        .data-panel-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 15px;
+        }
+
+        .data-section {
+            margin-bottom: 20px;
+        }
+
+        .data-section h4 {
+            font-size: 13px;
+            color: #333;
+            margin-bottom: 10px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .sql-preview {
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            color: #666;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        /* 响应式 */
+        @media (max-width: 1024px) {
+            .sidebar, .data-panel {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 顶部标题栏 -->
+        <div class="header">
+            <h1>Agent Teams 数据分析助手</h1>
+            <div class="status">
+                <span id="statusText">连接中...</span>
+                <div id="statusDot" class="status-dot connecting"></div>
+            </div>
+        </div>
+
+        <!-- 主内容区 -->
+        <div class="main">
+            <!-- 左侧对话历史 -->
+            <div class="sidebar">
+                <div class="sidebar-header">
+                    <h3>对话历史</h3>
+                    <button class="new-chat-btn" onclick="startNewChat()">+ 新对话</button>
+                </div>
+                <div class="conversation-list" id="conversationList">
+                    <!-- 动态生成 -->
+                </div>
+            </div>
+
+            <!-- 中间聊天区 -->
+            <div class="chat-area">
+                <div class="messages-container" id="messagesContainer">
+                    <!-- 欢迎消息 -->
+                    <div class="message agent">
+                        <div class="message-avatar">AI</div>
+                        <div class="message-content">
+                            <div>您好！我是数据分析助手。请输入您想查询的动态公交数据，例如：</div>
+                            <ul style="margin-top: 8px; padding-left: 20px;">
+                                <li>"查询2026年3月10日-15日的里程情况"</li>
+                                <li>"对比上周的订单数据"</li>
+                                <li>"分析3月份各区域的运营效率"</li>
+                            </ul>
+                            <div class="time">刚刚</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="input-area">
+                    <div class="input-wrapper">
+                        <textarea
+                            id="queryInput"
+                            class="input-field"
+                            placeholder="输入您的查询，例如：查询2026年3月10日-3月15日的里程情况，环比上周..."
+                            rows="1"
+                            onkeydown="handleKeyDown(event)"
+                            oninput="autoResize(this)"
+                        ></textarea>
+                        <button id="sendBtn" class="send-btn" onclick="sendQuery()">发送</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧数据面板 -->
+            <div class="data-panel">
+                <div class="data-panel-header">
+                    <h3>数据详情</h3>
+                </div>
+                <div class="data-panel-content" id="dataPanelContent">
+                    <div style="text-align: center; color: #999; padding: 40px 0;">
+                        暂无数据
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // WebSocket 连接
+        const SERVER_HOST = window.location.hostname || 'localhost';
+        const WS_URL = 'ws://' + SERVER_HOST + ':8000/ws/web-client-' + Math.random().toString(36).substr(2, 9);
+        let ws = null;
+        let isConnected = false;
+        let currentSessionId = 'session-' + Date.now();
+        let messageHistory = [];
+
+        // 初始化
+        window.onload = function() {
+            initWebSocket();
+            loadConversationHistory();
+        };
+
+        // 初始化 WebSocket
+        function initWebSocket() {
+            updateStatus('connecting', '连接中...');
+
+            ws = new WebSocket(WS_URL);
+
+            ws.onopen = function() {
+                isConnected = true;
+                updateStatus('connected', '已连接');
+                console.log('WebSocket connected');
+
+                // 加载历史对话
+                loadConversationHistory();
+            };
+
+            ws.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                handleMessage(data);
+            };
+
+            ws.onerror = function(error) {
+                console.error('WebSocket error:', error);
+                updateStatus('error', '连接错误');
+            };
+
+            ws.onclose = function() {
+                isConnected = false;
+                updateStatus('error', '连接断开');
+                // 自动重连
+                setTimeout(initWebSocket, 3000);
+            };
+        }
+
+        // 更新状态
+        function updateStatus(status, text) {
+            const dot = document.getElementById('statusDot');
+            const statusText = document.getElementById('statusText');
+
+            dot.className = 'status-dot ' + status;
+            statusText.textContent = text;
+        }
+
+        // 发送查询
+        function sendQuery() {
+            if (!isConnected) {
+                alert('请等待服务器连接');
+                return;
+            }
+
+            const input = document.getElementById('queryInput');
+            const query = input.value.trim();
+
+            if (!query) {
+                alert('请输入查询内容');
+                return;
+            }
+
+            // 添加用户消息
+            addMessage('user', query);
+
+            // 清空输入
+            input.value = '';
+            input.style.height = '44px';
+
+            // 禁用发送按钮
+            document.getElementById('sendBtn').disabled = true;
+
+            // 添加加载动画
+            addLoadingMessage();
+
+            // 发送请求
+            const request = {
+                type: 'analyze',
+                query: query,
+                session_id: currentSessionId
+            };
+
+            ws.send(JSON.stringify(request));
+            console.log('Sent query:', query);
+        }
+
+        // 添加消息到界面
+        function addMessage(type, content, data) {
+            const container = document.getElementById('messagesContainer');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message ' + type;
+
+            const time = new Date().toLocaleTimeString('zh-CN', {hour: '2-digit', minute:'2-digit'});
+
+            let contentHtml = '';
+            if (type === 'user') {
+                contentHtml = `
+                    <div class="message-content">
+                        <div>${escapeHtml(content)}</div>
+                        <div class="time">${time}</div>
+                    </div>
+                    <div class="message-avatar">我</div>
+                `;
+            } else {
+                contentHtml = `
+                    <div class="message-avatar">AI</div>
+                    <div class="message-content">
+                        <div>${content}</div>
+                        ${data ? renderAnalysisCard(data) : ''}
+                        <div class="time">${time}</div>
+                    </div>
+                `;
+            }
+
+            messageDiv.innerHTML = contentHtml;
+            container.appendChild(messageDiv);
+            container.scrollTop = container.scrollHeight;
+
+            // 保存到历史
+            messageHistory.push({type, content, time, data});
+        }
+
+        // 渲染分析卡片
+        function renderAnalysisCard(data) {
+            console.log('renderAnalysisCard data:', data);
+            const result = data.result || {};
+            const results = result.results || {};
+            const passenger = results.passenger || {};
+            const operation = results.operation || {};
+
+            console.log('renderAnalysisCard - result keys:', Object.keys(result));
+            console.log('renderAnalysisCard - results keys:', Object.keys(results));
+            console.log('renderAnalysisCard - passenger keys:', Object.keys(passenger));
+            console.log('renderAnalysisCard - operation keys:', Object.keys(operation));
+            console.log('renderAnalysisCard - passenger:', JSON.stringify(passenger, null, 2).slice(0, 500));
+            console.log('renderAnalysisCard - operation:', JSON.stringify(operation, null, 2).slice(0, 500));
+
+            let html = '';
+
+            // 渲染 Passenger Processor (里程分析) 结果
+            // 检查 analysis 是否存在且不为空
+            const passengerAnalysis = passenger.analysis || {};
+            const passengerError = passenger.error;
+            // statistics 可能在最外层，也可能在 analysis 内部
+            const passengerStats = passenger.statistics || passengerAnalysis.statistics || {};
+            // key_findings 可能在最外层，也可能在 analysis 内部，也可能在 final_report 中
+            const passengerFindings = passenger.key_findings ||
+                                     passengerAnalysis.key_findings ||
+                                     (result.final_report?.key_findings) ||
+                                     [];
+
+            console.log('renderAnalysisCard - passengerStats:', passengerStats);
+            console.log('renderAnalysisCard - passengerFindings length:', passengerFindings.length);
+            console.log('renderAnalysisCard - passenger.sql_used:', passenger.sql_used);
+            console.log('renderAnalysisCard - passengerError:', passengerError);
+
+            const hasPassengerData = passenger.sql_used ||
+                                     (Object.keys(passengerStats).length > 0) ||
+                                     (passengerFindings.length > 0) ||
+                                     passengerError;
+
+            console.log('renderAnalysisCard - hasPassengerData:', hasPassengerData);
+
+            if (hasPassengerData) {
+                const stats = passengerStats;
+                const findings = passengerFindings;
+
+                html += '<div class="analysis-card">';
+                html += '<h4>🚌 里程分析结果</h4>';
+
+                // 显示错误信息
+                if (passengerError) {
+                    html += `<div style="background:#ffebee; color:#c62828; padding:10px; border-radius:4px; margin-bottom:10px; font-size:13px;">`;
+                    html += `<strong>分析出错：</strong>${escapeHtml(passengerError)}`;
+                    html += `</div>`;
+                }
+
+                // 统计指标 - 动态渲染（使用中文标签）
+                const pColMeta = passenger.column_metadata || {};
+                const totalMileage = stats.total_mileage_km || stats.total_mileage;
+                const carryMileage = stats.carry_mileage_km || stats.carry_mileage;
+                const emptyMileage = stats.empty_mileage_km || stats.empty_mileage;
+                const utilizationRate = stats.mileage_utilization_rate;
+                const recordCount = stats.record_count;
+                const avgPerBus = stats.avg_per_bus_mileage_km;
+                const avgDaily = stats.avg_daily_mileage_km;
+
+                // 统计字段中英文映射表
+                const statsLabelMap = {
+                    'record_count': '分组数', 'total_mileage_km': '总里程', 'total_mileage': '总里程',
+                    'carry_mileage_km': '载客里程', 'carry_mileage': '载客里程',
+                    'empty_mileage_km': '空驶里程', 'empty_mileage': '空驶里程',
+                    'mileage_utilization_rate': '里程利用率', 'avg_daily_mileage_km': '日均里程',
+                    'avg_per_bus_mileage_km': '单车均里程', 'avg_per_bus_mileage': '单车均里程',
+                    'avg_daily_mileage': '日均里程', 'unique_buses': '车辆数', 'unique_days': '运营天数',
+                    'total_days': '运营天数', 'total_buses': '车辆数',
+                    'total_orders': '总订单数', 'completed_orders': '完成订单', 'cancelled_orders': '取消订单',
+                    'completion_rate': '完成率', 'total_passengers': '乘客数', 'domain': '数据域'
+                };
+                const statsUnitMap = {
+                    'record_count': '条', 'total_mileage_km': 'km', 'total_mileage': 'km',
+                    'carry_mileage_km': 'km', 'carry_mileage': 'km',
+                    'empty_mileage_km': 'km', 'empty_mileage': 'km',
+                    'mileage_utilization_rate': '%', 'avg_daily_mileage_km': 'km',
+                    'avg_per_bus_mileage_km': 'km', 'avg_per_bus_mileage': 'km',
+                    'avg_daily_mileage': 'km', 'unique_buses': '辆', 'unique_days': '天',
+                    'total_days': '天', 'total_buses': '辆',
+                    'total_orders': '单', 'completed_orders': '单', 'cancelled_orders': '单',
+                    'completion_rate': '%', 'total_passengers': '人'
+                };
+
+                if (Object.keys(stats).length > 0) {
+                    html += '<div class="metric-grid">';
+                    const hasColMeta = Object.keys(pColMeta).length > 0;
+                    // 定义展示优先级顺序
+                    const priorityOrder = ['record_count', 'total_mileage_km', 'avg_daily_mileage_km', 'avg_per_bus_mileage_km', 'carry_mileage_km', 'empty_mileage_km', 'mileage_utilization_rate', 'total_orders', 'completed_orders', 'cancelled_orders', 'completion_rate', 'total_passengers', 'unique_buses', 'unique_days'];
+                    const rendered = new Set();
+                    // 先渲染优先级字段
+                    for (const key of priorityOrder) {
+                        if (stats[key] !== undefined && stats[key] !== null) {
+                            const m = pColMeta[key];
+                            const label = (m && m.label) || statsLabelMap[key] || key;
+                            const unit = (m && m.unit) || statsUnitMap[key] || '';
+                            html += renderMetric(label, stats[key], unit);
+                            rendered.add(key);
+                        }
+                    }
+                    // 再渲染剩余字段
+                    for (const [key, val] of Object.entries(stats)) {
+                        if (!rendered.has(key) && val !== undefined && val !== null) {
+                            const m = pColMeta[key];
+                            const label = (m && m.label) || statsLabelMap[key] || key;
+                            const unit = (m && m.unit) || statsUnitMap[key] || '';
+                            html += renderMetric(label, val, unit);
+                        }
+                    }
+                    html += '</div>';
+                } else if (Object.keys(stats).length === 0 && !passengerError) {
+                    // statistics 为空，显示提示
+                    html += '<p style="color:#666; font-size:13px;">未获取到统计数据</p>';
+                }
+
+                // 关键发现
+                if (findings.length > 0) {
+                    html += '<ul class="finding-list">';
+                    findings.slice(0, 5).forEach(finding => {
+                        html += `<li>${escapeHtml(finding)}</li>`;
+                    });
+                    html += '</ul>';
+                }
+
+                html += '</div>';
+            }
+
+            // 渲染 Operation Scheduler (订单分析) 结果
+            const operationAnalysis = operation.analysis || {};
+            const operationError = operation.error;
+            // statistics 可能在最外层，也可能在 analysis 内部
+            const operationStats = operation.statistics || operationAnalysis.statistics || {};
+            // key_findings 可能在最外层，也可能在 analysis 内部
+            const operationFindings = operation.key_findings || operationAnalysis.key_findings || [];
+
+            console.log('renderAnalysisCard - operationStats:', operationStats);
+            console.log('renderAnalysisCard - operationFindings length:', operationFindings.length);
+            console.log('renderAnalysisCard - hasOperationData check:', {
+                sql_used: operation.sql_used,
+                statsKeys: Object.keys(operationStats).length,
+                findingsLength: operationFindings.length,
+                error: operationError
+            });
+
+            const hasOperationData = operation.sql_used ||
+                                     (Object.keys(operationStats).length > 0) ||
+                                     (operationFindings.length > 0) ||
+                                     operationError;
+
+            console.log('renderAnalysisCard - hasOperationData:', hasOperationData);
+
+            if (hasOperationData) {
+                const stats = operationStats;
+                const findings = operationFindings;
+
+                html += '<div class="analysis-card">';
+                html += '<h4>📊 订单分析结果</h4>';
+
+                // 显示错误信息
+                if (operationError) {
+                    html += `<div style="background:#ffebee; color:#c62828; padding:10px; border-radius:4px; margin-bottom:10px; font-size:13px;">`;
+                    html += `<strong>分析出错：</strong>${escapeHtml(operationError)}`;
+                    html += `</div>`;
+                }
+
+                // 统计指标 - 动态渲染（使用中文标签）
+                const opColMeta = operation.column_metadata || {};
+
+                // 运营统计字段中英文映射表
+                const opStatsLabelMap = {
+                    'total_orders': '总订单数', 'completed_orders': '完成订单', 'cancelled_orders': '取消订单',
+                    'completion_rate': '完成率', 'total_passengers': '乘客数', 'domain': '数据域'
+                };
+                const opStatsUnitMap = {
+                    'total_orders': '单', 'completed_orders': '单', 'cancelled_orders': '单',
+                    'completion_rate': '%', 'total_passengers': '人'
+                };
+
+                if (Object.keys(stats).length > 0) {
+                    html += '<div class="metric-grid">';
+                    // 定义展示优先级顺序
+                    const opPriorityOrder = ['total_orders', 'completed_orders', 'cancelled_orders', 'total_passengers', 'completion_rate'];
+                    const rendered = new Set();
+                    // 先渲染优先级字段
+                    for (const key of opPriorityOrder) {
+                        if (stats[key] !== undefined && stats[key] !== null) {
+                            const m = opColMeta[key];
+                            const label = (m && m.label) || opStatsLabelMap[key] || key;
+                            const unit = (m && m.unit) || opStatsUnitMap[key] || '';
+                            html += renderMetric(label, stats[key], unit);
+                            rendered.add(key);
+                        }
+                    }
+                    // 再渲染剩余字段
+                    for (const [key, val] of Object.entries(stats)) {
+                        if (!rendered.has(key) && key !== 'domain' && val !== undefined && val !== null && typeof val !== 'object') {
+                            const m = opColMeta[key];
+                            const label = (m && m.label) || opStatsLabelMap[key] || key;
+                            const unit = (m && m.unit) || opStatsUnitMap[key] || '';
+                            html += renderMetric(label, val, unit);
+                        }
+                    }
+                    html += '</div>';
+                } else if (Object.keys(stats).length === 0 && !operationError) {
+                    html += '<p style="color:#666; font-size:13px;">未获取到统计数据</p>';
+                }
+
+                // 关键发现
+                if (findings.length > 0) {
+                    html += '<ul class="finding-list">';
+                    findings.slice(0, 5).forEach(finding => {
+                        html += `<li>${escapeHtml(finding)}</li>`;
+                    });
+                    html += '</ul>';
+                }
+
+                html += '</div>';
+            }
+
+            // 如果没有分析结果，显示提示
+            if (!html) {
+                html = '<div class="analysis-card"><p>暂无分析数据</p><pre style="font-size:10px; color:#999;">' + JSON.stringify(results, null, 2) + '</pre></div>';
+            }
+
+            return html;
+        }
+
+        // 渲染指标
+        function renderMetric(label, value, unit) {
+            if (value === undefined) return '';
+            return `
+                <div class="metric-item">
+                    <div class="label">${label}</div>
+                    <div class="value">${value} ${unit}</div>
+                </div>
+            `;
+        }
+
+        // 添加加载消息
+        function addLoadingMessage() {
+            const container = document.getElementById('messagesContainer');
+            const loadingDiv = document.createElement('div');
+            loadingDiv.className = 'message agent loading-message';
+            loadingDiv.innerHTML = `
+                <div class="message-avatar">AI</div>
+                <div class="loading">
+                    <div class="loading-dots">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </div>
+                    <span>正在分析数据...</span>
+                </div>
+            `;
+            container.appendChild(loadingDiv);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // 移除加载消息
+        function removeLoadingMessage() {
+            const container = document.getElementById('messagesContainer');
+            const loading = container.querySelector('.loading-message');
+            if (loading) {
+                loading.remove();
+            }
+        }
+
+        // 处理返回的消息
+        function handleMessage(data) {
+            console.log('Received:', data);
+
+            if (data.type === 'started') {
+                // 任务开始
+            }
+            else if (data.type === 'completed') {
+                removeLoadingMessage();
+                document.getElementById('sendBtn').disabled = false;
+
+                // 添加 AI 回复
+                addMessage('agent', '分析完成！', data);
+
+                // 更新数据面板
+                updateDataPanel(data);
+
+                // 刷新对话列表
+                loadConversationHistory();
+            }
+            else if (data.type === 'error') {
+                removeLoadingMessage();
+                document.getElementById('sendBtn').disabled = false;
+                addMessage('agent', `抱歉，分析出错：${data.error}`);
+            }
+            else if (data.type === 'history') {
+                // 更新对话列表
+                updateConversationList(data.history);
+            }
+            else if (data.type === 'history_cleared') {
+                // 历史已清空，刷新列表
+                updateConversationList([]);
+                console.log('对话历史已清空');
+            }
+        }
+
+        // 更新数据面板
+        function updateDataPanel(data) {
+            console.log('updateDataPanel data:', data);
+            const panel = document.getElementById('dataPanelContent');
+            const result = data.result || {};
+            const results = result.results || {};
+            const passenger = results.passenger || {};
+            const operation = results.operation || {};
+
+            console.log('updateDataPanel passenger:', passenger);
+            console.log('updateDataPanel operation:', operation);
+            console.log('updateDataPanel passenger keys:', Object.keys(passenger));
+            console.log('updateDataPanel operation keys:', Object.keys(operation));
+
+            let html = '';
+
+            // SQL 查询
+            if (passenger.sql_used) {
+                html += `
+                    <div class="data-section">
+                        <h4>执行的 SQL (里程)</h4>
+                        <div class="sql-preview">${escapeHtml(passenger.sql_used)}</div>
+                    </div>
+                `;
+            }
+
+            if (operation.sql_used) {
+                html += `
+                    <div class="data-section">
+                        <h4>执行的 SQL (订单)</h4>
+                        <div class="sql-preview">${escapeHtml(operation.sql_used)}</div>
+                    </div>
+                `;
+            }
+
+            // 数据发现
+            if (passenger.data_discovery) {
+                const tables = passenger.data_discovery.relevant_tables || [];
+                html += `
+                    <div class="data-section">
+                        <h4>相关数据表</h4>
+                        <p style="font-size: 13px; color: #666;">${tables.join(', ')}</p>
+                    </div>
+                `;
+            }
+
+            // 查询摘要
+            if (passenger.query_summary) {
+                html += `
+                    <div class="data-section">
+                        <h4>查询摘要 (里程)</h4>
+                        <p style="font-size: 13px; color: #666;">
+                            返回 ${passenger.query_summary.total_rows} 行数据
+                        </p>
+                    </div>
+                `;
+            }
+
+            if (operation.query_summary) {
+                html += `
+                    <div class="data-section">
+                        <h4>查询摘要 (订单)</h4>
+                        <p style="font-size: 13px; color: #666;">
+                            返回 ${operation.query_summary.total_rows} 行数据
+                        </p>
+                    </div>
+                `;
+            }
+
+            // 通用分组明细数据表渲染函数
+            function renderGroupedDataTable(gd, sourceLabel) {
+                if (!gd || !gd.display_records) return '';
+                const records = gd.display_records;
+                const groupBy = gd.group_by || '';
+                const totalRecords = gd.total_records || records.length;
+                const columnMeta = gd.column_metadata || result.column_metadata || {};
+
+                const fallbackColMap = {
+                    'BUS_NO': '车辆编号', 'BUS_ID': '车辆ID',
+                    'DRIVER_NAME': '司机', 'DRIVER_ID': '司机ID',
+                    'ROUTE_NAME': '线路', 'ROUTE_ID': '线路ID',
+                    'REGION_NAME': '区域', 'REGION_ID': '区域ID',
+                    'AVG_DAILY_MILEAGE': '日均里程', 'AVG_PER_BUS_MILEAGE': '单车均里程',
+                    'TOTAL_MILEAGE': '总里程', 'CARRY_MILEAGE': '载客里程',
+                    'DAYS_COUNT': '运营天数', 'DAY_COUNT': '运营天数',
+                    'UNIQUE_DAYS': '运营天数', 'BUS_COUNT': '车辆数',
+                    'TOTAL_ORDERS': '总订单数', 'COMPLETED_ORDERS': '完成订单',
+                    'CANCELLED_ORDERS': '取消订单', 'TOTAL_PASSENGERS': '乘客数',
+                    'COMPLETION_RATE': '完成率', 'START_STATION_NAME': '上车站点',
+                    'END_STATION_NAME': '下车站点', 'STATUS_NAME': '订单状态'
+                };
+                function getColLabel(colKey) {
+                    // 优先使用 column_metadata 中文标签
+                    if (columnMeta[colKey] && columnMeta[colKey].label) {
+                        const m = columnMeta[colKey];
+                        return m.unit ? `${m.label}(${m.unit})` : m.label;
+                    }
+                    return fallbackColMap[colKey] || colKey;
+                }
+
+                if (records.length === 0) return '';
+                const cols = Object.keys(records[0]);
+                let tbl = `
+                    <div class="data-section">
+                        <h4>分组明细数据 (${sourceLabel}，按${getColLabel(groupBy)}，共${totalRecords}条)</h4>
+                        <div style="overflow-x:auto; max-height:400px; overflow-y:auto;">
+                            <table style="width:100%; border-collapse:collapse; font-size:12px;">
+                                <thead style="position:sticky; top:0; background:#f5f5f5;">
+                                    <tr>
+                                        <th style="padding:6px 8px; border:1px solid #ddd; text-align:center; color:#666;">#</th>
+                                        ${cols.map(c => `<th style="padding:6px 8px; border:1px solid #ddd; text-align:right; color:#666;">${getColLabel(c)}</th>`).join('')}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${records.map((r, i) => `
+                                        <tr style="background:${i % 2 === 0 ? '#fff' : '#fafafa'};">
+                                            <td style="padding:4px 8px; border:1px solid #eee; text-align:center; color:#999;">${i + 1}</td>
+                                            ${cols.map(c => {
+                                                let v = r[c];
+                                                if (typeof v === 'number') v = Math.round(v * 100) / 100;
+                                                return `<td style="padding:4px 8px; border:1px solid #eee; text-align:right;">${v ?? '-'}</td>`;
+                                            }).join('')}
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                `;
+                return tbl;
+            }
+
+            // 渲染乘客和订单的分组明细数据
+            html += renderGroupedDataTable(passenger.grouped_data, '里程');
+            html += renderGroupedDataTable(operation.grouped_data, '订单');
+
+            panel.innerHTML = html || '<div style="text-align: center; color: #999; padding: 40px 0;">暂无数据</div>';
+        }
+
+        // 加载对话历史
+        function loadConversationHistory() {
+            if (!isConnected) return;
+
+            ws.send(JSON.stringify({
+                type: 'history',
+                session_id: currentSessionId,
+                limit: 20
+            }));
+        }
+
+        // 更新对话列表
+        function updateConversationList(history) {
+            const list = document.getElementById('conversationList');
+
+            if (!history || history.length === 0) {
+                list.innerHTML = '<div style="text-align: center; color: #999; padding: 20px;">暂无历史对话</div>';
+                return;
+            }
+
+            // 按时间分组
+            const grouped = {};
+            history.forEach(item => {
+                const date = new Date(item.timestamp).toLocaleDateString('zh-CN');
+                if (!grouped[date]) grouped[date] = [];
+                grouped[date].push(item);
+            });
+
+            let html = '';
+            Object.keys(grouped).sort().reverse().forEach(date => {
+                html += `<div style="font-size: 12px; color: #999; padding: 10px 5px;">${date}</div>`;
+                grouped[date].forEach(item => {
+                    const title = item.user_message.substring(0, 20) + '...';
+                    const time = new Date(item.timestamp).toLocaleTimeString('zh-CN', {hour: '2-digit', minute:'2-digit'});
+                    html += `
+                        <div class="conversation-item" onclick="loadConversation('${item.session_id}')">
+                            <div class="title">${escapeHtml(title)}</div>
+                            <div class="meta">${time}</div>
+                        </div>
+                    `;
+                });
+            });
+
+            list.innerHTML = html;
+        }
+
+        // 开始新对话
+        function startNewChat() {
+            currentSessionId = 'session-' + Date.now();
+            messageHistory = [];
+
+            // 清空消息区
+            const container = document.getElementById('messagesContainer');
+            container.innerHTML = `
+                <div class="message agent">
+                    <div class="message-avatar">AI</div>
+                    <div class="message-content">
+                        <div>新对话已开始。请输入您想查询的内容：</div>
+                        <div class="time">刚刚</div>
+                    </div>
+                </div>
+            `;
+
+            // 清空数据面板
+            document.getElementById('dataPanelContent').innerHTML = '<div style="text-align: center; color: #999; padding: 40px 0;">暂无数据</div>';
+
+            // 清空输入
+            document.getElementById('queryInput').value = '';
+
+            // 清空服务器端历史
+            if (isConnected) {
+                ws.send(JSON.stringify({
+                    type: 'clear_history',
+                    session_id: currentSessionId
+                }));
+            }
+        }
+
+        // 加载特定对话
+        function loadConversation(sessionId) {
+            currentSessionId = sessionId;
+            loadConversationHistory();
+            // TODO: 加载该会话的完整消息
+        }
+
+        // 键盘处理
+        function handleKeyDown(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendQuery();
+            }
+        }
+
+        // 自动调整输入框高度
+        function autoResize(textarea) {
+            textarea.style.height = 'auto';
+            textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
+        }
+
+        // HTML 转义
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>
